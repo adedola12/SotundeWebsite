@@ -17,6 +17,13 @@
 
 set -euo pipefail
 
+# Git Bash / MSYS rewrites any argument that looks like a Unix path into a
+# Windows one before the process sees it, so "/sotunde/backend/MONGO_URI"
+# arrives as "C:/Program Files/Git/sotunde/...". That breaks SSM parameter
+# names and --health-check-path. Turn the conversion off for this script.
+export MSYS_NO_PATHCONV=1
+export MSYS2_ARG_CONV_EXCL='*'
+
 ACCOUNT=065634457992
 REGION=eu-west-1
 PROJECT=sotunde
@@ -172,29 +179,51 @@ else
     --query 'service.serviceArn' --output text)
 fi
 
-echo "==> waiting for service to become ACTIVE"
-URL=""
+# service.status flips to ACTIVE the instant the service record exists — long
+# before the ALB is provisioned or a single task is running. The deployment is
+# the thing worth waiting on: it uses a canary strategy with a bake period, so
+# a real first rollout takes several minutes.
+echo "==> waiting for the deployment to finish"
+
+DEPLOYMENT=""
+for _ in $(seq 1 30); do
+  DEPLOYMENT=$(aws ecs describe-express-gateway-service --region "$REGION" \
+    --service-arn "$ARN" --query 'service.currentDeployment' --output text 2>/dev/null || echo "")
+  [ -n "$DEPLOYMENT" ] && [ "$DEPLOYMENT" != "None" ] && break
+  sleep 10
+done
+
+if [ -z "$DEPLOYMENT" ] || [ "$DEPLOYMENT" = "None" ]; then
+  echo "    no deployment was created for the service" >&2
+  exit 1
+fi
+
+DEPLOY_STATUS=""
 for _ in $(seq 1 60); do
-  STATUS=$(aws ecs describe-express-gateway-service --region "$REGION" \
-    --service-arn "$ARN" --query 'service.status.statusCode' --output text 2>/dev/null || echo PENDING)
-  URL=$(aws ecs describe-express-gateway-service --region "$REGION" --service-arn "$ARN" \
-    --query "service.activeConfigurations[0].ingressPaths[?accessType=='PUBLIC'].endpoint | [0]" \
-    --output text 2>/dev/null || echo "")
-  echo "    status: $STATUS  endpoint: ${URL:-pending}"
-  if [ "$STATUS" = "ACTIVE" ] && [ -n "$URL" ] && [ "$URL" != "None" ]; then
-    break
-  fi
-  if [ "$STATUS" = "INACTIVE" ]; then
-    echo "    service went INACTIVE — check CloudWatch Logs" >&2
-    aws ecs describe-express-gateway-service --region "$REGION" --service-arn "$ARN" \
-      --query 'service.status.statusReason' --output text >&2 || true
-    exit 1
-  fi
+  read -r DEPLOY_STATUS RUNNING PENDING <<<"$(aws ecs describe-service-deployments \
+    --region "$REGION" --service-deployment-arns "$DEPLOYMENT" \
+    --query 'serviceDeployments[0].[status,targetServiceRevision.runningTaskCount,targetServiceRevision.pendingTaskCount]' \
+    --output text 2>/dev/null || echo "UNKNOWN 0 0")"
+  echo "    $DEPLOY_STATUS  running=$RUNNING pending=$PENDING"
+  [ "$DEPLOY_STATUS" != "IN_PROGRESS" ] && [ "$DEPLOY_STATUS" != "UNKNOWN" ] && break
   sleep 20
 done
 
+if [ "$DEPLOY_STATUS" != "SUCCESSFUL" ]; then
+  echo "    deployment ended as $DEPLOY_STATUS — check CloudWatch Logs:" >&2
+  echo "    aws logs tail /aws/ecs/default/${SERVICE}-* --region $REGION --follow" >&2
+  aws ecs describe-service-deployments --region "$REGION" \
+    --service-deployment-arns "$DEPLOYMENT" \
+    --query 'serviceDeployments[0].statusReason' --output text >&2 || true
+  exit 1
+fi
+
+URL=$(aws ecs describe-express-gateway-service --region "$REGION" --service-arn "$ARN" \
+  --query "service.activeConfigurations[0].ingressPaths[?accessType=='PUBLIC'].endpoint | [0]" \
+  --output text 2>/dev/null || echo "")
+
 if [ -z "$URL" ] || [ "$URL" = "None" ]; then
-  echo "    timed out waiting for a public endpoint" >&2
+  echo "    deployment succeeded but no public endpoint was published" >&2
   exit 1
 fi
 

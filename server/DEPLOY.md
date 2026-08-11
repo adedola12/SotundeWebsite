@@ -22,10 +22,15 @@ Both IAM roles already existed in this account. The execution role was given an
 inline policy `SotundeSecretRead` granting `ssm:GetParameter{,s}` on
 `/sotunde/backend/*` — the *execution* role fetches secrets, not the task role.
 
+**Live URL:** `https://so-4692446bcade4703a9fb30dc02fba183.ecs.eu-west-1.on.aws`
+
 ## Deploy
 
+Run it through bash — PowerShell cannot execute `.sh` files and will return
+silently without doing anything:
+
 ```bash
-cd server && ./deploy-aws.sh
+cd server && bash ./deploy-aws.sh
 ```
 
 The script is idempotent — it pushes secrets from `server/.env` into SSM, builds

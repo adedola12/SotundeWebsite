@@ -128,12 +128,25 @@ app.use((err, _req, res, _next) => {
 /* -------------------- boot -------------------- */
 const port = process.env.PORT || 4000;
 
-try {
-  await connectToDatabase(process.env.MONGO_URI);
-  app.listen(port, () =>
-    console.log(`Sotunde Website Server running on :${port}`),
-  );
-} catch (err) {
-  console.error("DB error", err);
-  process.exit(1);
+// Listen first, connect second. Exiting on a failed database connection makes
+// the container crash-loop under ECS, so the service never stabilises and the
+// logs never surface the real cause. Staying up means the load balancer health
+// check on "/" passes, "/health" reports the database as down, and the process
+// keeps retrying — so fixing the credential in SSM and rolling the tasks is
+// enough to recover, with no code change.
+app.listen(port, () =>
+  console.log(`Sotunde Website Server running on :${port}`),
+);
+
+const RETRY_MS = 10_000;
+
+async function connectWithRetry() {
+  try {
+    await connectToDatabase(process.env.MONGO_URI);
+  } catch (err) {
+    console.error(`DB connect failed, retrying in ${RETRY_MS / 1000}s:`, err.message);
+    setTimeout(connectWithRetry, RETRY_MS).unref();
+  }
 }
+
+connectWithRetry();
