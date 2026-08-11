@@ -30,6 +30,36 @@ INFRA_ROLE=arn:aws:iam::${ACCOUNT}:role/ecsInfrastructureRoleForExpressServices
 
 cd "$(dirname "$0")"
 
+# A shell started before the AWS CLI was installed has a stale PATH and fails
+# with "aws: command not found". Fall back to the standard Windows install dir.
+if ! command -v aws >/dev/null 2>&1; then
+  for candidate in \
+    "/c/Program Files/Amazon/AWSCLIV2" \
+    "/c/Program Files (x86)/Amazon/AWSCLIV2" \
+    "$HOME/AppData/Local/Programs/Amazon/AWSCLIV2"
+  do
+    if [ -x "$candidate/aws.exe" ] || [ -x "$candidate/aws" ]; then
+      PATH="$candidate:$PATH"
+      export PATH
+      echo "==> found AWS CLI in $candidate"
+      break
+    fi
+  done
+fi
+
+if ! command -v aws >/dev/null 2>&1; then
+  echo "ERROR: aws CLI not found on PATH." >&2
+  echo "       Open a NEW terminal (PATH may be stale), or install it from" >&2
+  echo "       https://aws.amazon.com/cli/" >&2
+  exit 1
+fi
+
+if ! command -v docker >/dev/null 2>&1 && [ "${SKIP_BUILD-0}" != "1" ]; then
+  echo "ERROR: docker not found on PATH. Start Docker Desktop, or re-run with" >&2
+  echo "       SKIP_BUILD=1 if the image is already in ECR." >&2
+  exit 1
+fi
+
 # --------------------------------------------------- secrets -> SSM (SecureString)
 echo "==> SSM parameters (read from server/.env, never printed)"
 
