@@ -1,5 +1,18 @@
 // client/src/api/http.js
-const RAW_BASE = import.meta.env.VITE_AUTH_ENDPOINT || "";
+
+// The deployed API (ECS Express Mode, eu-west-1).
+//
+// Vite inlines VITE_AUTH_ENDPOINT at build time when it is set — from a local
+// .env for development, or from a Vercel dashboard variable. Vercel does not
+// pick up .env files committed to the repo, so without this fallback a
+// production build resolves to an empty base URL and quietly issues API calls
+// against the site's own origin, which 404s on every route.
+const PROD_API_BASE =
+  "https://so-4692446bcade4703a9fb30dc02fba183.ecs.eu-west-1.on.aws";
+
+const RAW_BASE =
+  import.meta.env.VITE_AUTH_ENDPOINT ||
+  (import.meta.env.PROD ? PROD_API_BASE : "");
 const API_BASE = String(RAW_BASE).replace(/\/+$/, "");
 
 export const buildUrl = (path) => {
