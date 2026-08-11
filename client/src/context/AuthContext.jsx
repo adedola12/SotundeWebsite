@@ -9,9 +9,10 @@ import React, {
   useState,
 } from "react";
 
+import { API_BASE } from "../api/http";
+
 const AuthContext = createContext(null);
 
-const API_BASE = import.meta.env.VITE_AUTH_ENDPOINT || "";
 const TOKEN_KEYS = ["token", "authToken", "accessToken"];
 const USER_KEY = "user";
 

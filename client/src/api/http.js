@@ -10,10 +10,19 @@
 const PROD_API_BASE =
   "https://so-4692446bcade4703a9fb30dc02fba183.ecs.eu-west-1.on.aws";
 
-const RAW_BASE =
-  import.meta.env.VITE_AUTH_ENDPOINT ||
-  (import.meta.env.PROD ? PROD_API_BASE : "");
-const API_BASE = String(RAW_BASE).replace(/\/+$/, "");
+// Production deliberately ignores VITE_AUTH_ENDPOINT. A stale Vercel dashboard
+// variable pointing at the decommissioned Render service silently overrode both
+// a committed .env.production and a fallback here, and the failure is invisible
+// at build time — it just ships a bundle that calls a dead host. There is one
+// production API, so pinning it is worth more than the ability to repoint it
+// from the dashboard. Development still honours the variable.
+const RAW_BASE = import.meta.env.PROD
+  ? PROD_API_BASE
+  : import.meta.env.VITE_AUTH_ENDPOINT || "";
+// Exported so every caller resolves the API through the same value. Modules
+// that read import.meta.env.VITE_AUTH_ENDPOINT themselves drift out of sync —
+// AuthContext did exactly that and kept posting logins to the retired host.
+export const API_BASE = String(RAW_BASE).replace(/\/+$/, "");
 
 export const buildUrl = (path) => {
   const p = String(path || "");
