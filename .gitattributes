@@ -1,0 +1,6 @@
+# core.autocrlf=true would otherwise check these out with CRLF. A shell script
+# with CRLF fails as "bad interpreter: /usr/bin/env bash^M", and CRLF inside a
+# Dockerfile RUN line breaks the command. Force LF for anything Linux executes.
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+.dockerignore text eol=lf

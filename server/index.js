@@ -93,6 +93,14 @@ app.get("/", (_req, res) =>
   res.json({ status: "ok", app: "Sotunde Website API" }),
 );
 
+app.get("/health", (_req, res) => {
+  const dbUp = mongoose.connection.readyState === 1;
+  res.status(dbUp ? 200 : 503).json({
+    status: dbUp ? "ok" : "degraded",
+    db: dbUp ? "connected" : "disconnected",
+  });
+});
+
 /* -------------------- errors -------------------- */
 app.use((err, _req, res, next) => {
   if (err?.type === "entity.parse.failed") {
@@ -111,7 +119,6 @@ app.use((err, _req, res, next) => {
   return next(err);
 });
 
-app.use(express.static("client/dist"));
 app.use((req, res) => res.status(404).json({ error: "Not found" }));
 app.use((err, _req, res, _next) => {
   console.error(err);

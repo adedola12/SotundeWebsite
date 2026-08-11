@@ -1,0 +1,16 @@
+node_modules
+npm-debug.log*
+
+# Never bake secrets into the image — App Runner injects these from SSM
+.env
+.env.*
+
+# Seed scripts are run manually, not needed at runtime
+seed.js
+seed-*.js
+
+Dockerfile
+.dockerignore
+.gitignore
+*.md
+.git
