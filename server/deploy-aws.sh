@@ -68,6 +68,13 @@ if ! command -v docker >/dev/null 2>&1 && [ "${SKIP_BUILD-0}" != "1" ]; then
 fi
 
 # --------------------------------------------------- secrets -> SSM (SecureString)
+# SSM is the source of truth for the running service, and .env is only a staging
+# area. If a secret was set directly in SSM and .env was not updated to match,
+# this step would silently overwrite the good value with the stale one, so skip
+# it with SKIP_SECRETS=1 when rolling tasks to pick up a parameter change.
+if [ "${SKIP_SECRETS-0}" = "1" ]; then
+  echo "==> skipping SSM push (SKIP_SECRETS=1)"
+else
 echo "==> SSM parameters (read from server/.env, never printed)"
 
 if [ ! -f .env ]; then
@@ -101,12 +108,27 @@ put_secret() {
   echo "    set   $key"
 }
 
+# A malformed connection string is only discovered by a task that starts, fails
+# to parse it and retries forever, several minutes after the deploy claimed
+# success. Check the scheme here, where the message is immediate and readable.
+case "${MONGO_URI-}" in
+  mongodb://*|mongodb+srv://*) ;;
+  "") echo "    ERROR: MONGO_URI is empty in .env" >&2; exit 1 ;;
+  *)
+    echo "    ERROR: MONGO_URI does not start with mongodb:// or mongodb+srv://" >&2
+    echo "           Length ${#MONGO_URI}, begins '$(printf %.12s "${MONGO_URI}")'" >&2
+    echo "           A placeholder such as NEW_URI reaches this point looking valid." >&2
+    exit 1
+    ;;
+esac
+
 put_secret MONGO_URI             "${MONGO_URI-}"
 put_secret JWT_SECRET            "${JWT_SECRET-}"
 put_secret CLOUDINARY_CLOUD_NAME "${CLOUDINARY_CLOUD_NAME-}"
 put_secret CLOUDINARY_API_KEY    "${CLOUDINARY_API_KEY-}"
 put_secret CLOUDINARY_API_SECRET "${CLOUDINARY_API_SECRET-}"
 put_secret GOOGLE_SHEET_WEBHOOK  "${GOOGLE_SHEET_WEBHOOK-}"
+fi
 
 # --------------------------------------------------------- build & push image
 # Skip with:  SKIP_BUILD=1 ./deploy-aws.sh
